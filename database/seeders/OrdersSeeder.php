@@ -18,6 +18,7 @@ class OrdersSeeder extends Seeder
                 'location'   => 'CDMX',
                 'type'       => 'NORMAL',
                 'truck_id'   => 123,
+                'dock_id'   => 1,
                 'created_at' => Carbon::create(2026, 2, 8),
             ],
             [
@@ -25,6 +26,7 @@ class OrdersSeeder extends Seeder
                 'location'   => 'CHIAPAS',
                 'type'       => 'NORMAL',
                 'truck_id'   => 456,
+                 'dock_id'   => 1,
                 'created_at' => Carbon::create(2026, 2, 8),
             ],
             [
@@ -32,6 +34,7 @@ class OrdersSeeder extends Seeder
                 'location'   => 'GUADALAJARA',
                 'type'       => 'NORMAL',
                 'truck_id'   => 789,
+                 'dock_id'   => 1,
                 'created_at' => Carbon::create(2026, 2, 8),
             ],
         ]);

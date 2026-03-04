@@ -16,7 +16,7 @@ return new class extends Migration
 
         $table->string('scan_session_id');
         $table->unsignedBigInteger('order_id');
-        $table->unsignedBigInteger('product_id');
+        $table->string('product_id', 50);
 
         $table->integer('expected_qty');
         $table->integer('scanned_qty');
@@ -24,6 +24,7 @@ return new class extends Migration
         $table->string('status', 20); // OK | MISSING | EXTRA
 
         $table->timestamp('created_at')->useCurrent();
+        $table->unique(['scan_session_id', 'order_id', 'product_id']);
 
         $table->foreign('order_id')
             ->references('order_id')

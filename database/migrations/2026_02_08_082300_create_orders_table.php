@@ -17,9 +17,8 @@ return new class extends Migration
             $table->string('location', 100);
             $table->string('type', 50);
             $table->unsignedBigInteger('truck_id')->nullable();
-
+            $table->unsignedBigInteger('dock_id')->nullable();
             $table->timestamp('created_at')->useCurrent();
-
             // índices útiles
             $table->index('truck_id');
             $table->index('created_at');

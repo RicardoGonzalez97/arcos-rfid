@@ -11,27 +11,25 @@ return new class extends Migration
      */
     public function up(): void
     {
-       Schema::create('order_scan_sessions', function (Blueprint $table) {
-
-            $table->id('order_scan_session_id');
+         Schema::create('scan_session_orders', function (Blueprint $table) {
+            $table->id();
 
             $table->uuid('scan_session_id');
             $table->unsignedBigInteger('order_id');
 
-            $table->string('status', 20)->default('OPEN');
-            $table->timestamp('closed_at')->nullable();
+            $table->timestamps();
 
-            $table->timestamps(); // created_at / updated_at
+            $table->unique(['scan_session_id', 'order_id']);
 
-           
+            $table->foreign('scan_session_id')
+                ->references('scan_session_id')
+                ->on('order_scan_sessions')
+                ->onDelete('cascade');
+
             $table->foreign('order_id')
                 ->references('order_id')
                 ->on('orders')
                 ->onDelete('cascade');
-
-          
-            $table->unique('scan_session_id');
-            $table->index(['order_id', 'status']);
         });
     }
 
@@ -40,6 +38,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('order_scan_sessions');
+        Schema::dropIfExists('scan_session_orders');
     }
 };

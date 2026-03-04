@@ -9,31 +9,40 @@ return new class extends Migration
     /**
      * Run the migrations.
      */
-    public function up(): void
-    {
-        Schema::create('scan_session_results', function (Blueprint $table) {
-            $table->bigIncrements('scan_session_results_id');
+public function up(): void
+{
+    Schema::create('scan_session_results', function (Blueprint $table) {
 
-            $table->string('scan_session_id')->unique();
-            $table->unsignedBigInteger('order_id');
+        $table->bigIncrements('scan_session_results_id');
 
-            $table->integer('expected_total');
-            $table->integer('scanned_total');
-            $table->integer('missing_total');
-            $table->integer('extra_total');
+        $table->uuid('scan_session_id');
+        $table->unsignedBigInteger('order_id');   // 🔥 NECESARIO
+        $table->unsignedBigInteger('dock_id');
 
-            $table->string('status', 20); // OK | PARTIAL
+        $table->integer('expected_total')->default(0);
+        $table->integer('scanned_total')->default(0);
+        $table->integer('missing_total')->default(0);
+        $table->integer('extra_total')->default(0);
 
-            $table->timestamp('created_at')->useCurrent();
+        $table->string('status', 20);
 
-            $table->foreign('order_id')
-                ->references('order_id')
-                ->on('orders')
-                ->onDelete('cascade');
-        });
+        $table->timestamps();
 
-    }
+        $table->index('scan_session_id');
+        $table->index('order_id');
+        $table->index('dock_id');
 
+        $table->foreign('scan_session_id')
+            ->references('scan_session_id')
+            ->on('order_scan_sessions')
+            ->onDelete('cascade');
+
+        $table->foreign('order_id')
+            ->references('order_id')
+            ->on('orders')
+            ->onDelete('cascade');
+    });
+}
     /**
      * Reverse the migrations.
      */
