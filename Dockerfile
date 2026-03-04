@@ -20,8 +20,7 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 COPY . .
 
 # instalar dependencias Laravel
-RUN composer install --no-dev --optimize-autoloader
-
+RUN composer install --optimize-autoloader
 # limpiar caches de laravel
 RUN php artisan config:clear || true
 RUN php artisan route:clear || true
