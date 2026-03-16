@@ -52,4 +52,14 @@ class PurchaseOrder extends Model
     {
         return $this->hasMany(PurchaseOrderItem::class);
     }
+
+    public function docks()
+    {
+        return $this->belongsToMany(
+            SupplierAppointmentSlotDock::class,
+            'dock_purchase_orders',
+            'purchase_order_id',
+            'dock_id'
+        );
+    }
 }

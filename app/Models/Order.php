@@ -16,10 +16,12 @@ class Order extends Model
     // 👆 solo tienes created_at
 
     protected $fillable = [
+        'purchase_order_id',
         'location',
         'type',
         'truck_id',
         'dock_id',
+        'order_id'
     ];
 
     /*

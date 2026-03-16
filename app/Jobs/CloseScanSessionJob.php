@@ -24,12 +24,6 @@ class CloseScanSessionJob implements ShouldQueue
     {
         DB::transaction(function () {
 
-            /*
-            |--------------------------------------------------------------------------
-            | 0️⃣ Lock session
-            |--------------------------------------------------------------------------
-            */
-
             $session = DB::table('order_scan_sessions')
                 ->where('scan_session_id', $this->scanSessionId)
                 ->lockForUpdate()
@@ -43,18 +37,7 @@ class CloseScanSessionJob implements ShouldQueue
 
             /*
             |--------------------------------------------------------------------------
-            | 1️⃣ Obtener órdenes vinculadas
-            |--------------------------------------------------------------------------
-            */
-
-            $orderIds = DB::table('scan_session_orders')
-                ->where('scan_session_id', $this->scanSessionId)
-                ->pluck('order_id')
-                ->toArray();
-
-            /*
-            |--------------------------------------------------------------------------
-            | 2️⃣ Limpiar resultados anteriores
+            | Limpiar resultados previos
             |--------------------------------------------------------------------------
             */
 
@@ -68,124 +51,176 @@ class CloseScanSessionJob implements ShouldQueue
 
             /*
             |--------------------------------------------------------------------------
-            | 3️⃣ Procesar cada orden
+            | Generar resultados por producto
             |--------------------------------------------------------------------------
             */
 
-            foreach ($orderIds as $orderId) {
+            DB::insert("
+                INSERT INTO scan_product_results
+                (scan_session_id, order_id, product_id, expected_qty, scanned_qty, status, created_at)
 
-                $expected = DB::table('order_products')
-                    ->where('order_id', $orderId)
-                    ->select(
-                        'product_id',
-                        DB::raw('SUM(expected_quantity) as expected_qty')
-                    )
-                    ->groupBy('product_id')
-                    ->get()
-                    ->keyBy('product_id');
+                SELECT
+                    ?,
+                    op.order_id,
+                    op.product_id,
+                    op.expected_qty,
+                    COALESCE(se.scanned_qty,0),
 
-                $scanned = DB::table('scan_events')
-                    ->where('scan_session_id', $this->scanSessionId)
-                    ->where('order_id', $orderId)
-                    ->select(
-                        'product_id',
-                        DB::raw('COUNT(*) as scanned_qty')
-                    )
-                    ->groupBy('product_id')
-                    ->get()
-                    ->keyBy('product_id');
+                    CASE
+                        WHEN COALESCE(se.scanned_qty,0) < op.expected_qty THEN 'MISSING'
+                        WHEN COALESCE(se.scanned_qty,0) > op.expected_qty THEN 'EXTRA'
+                        ELSE 'OK'
+                    END,
 
-                $results = [];
+                    NOW()
 
-                foreach ($expected as $productId => $exp) {
+             FROM
+            (
+                SELECT
+                    op.order_id,
+                    op.product_id,
+                    SUM(op.expected_quantity) as expected_qty
+                FROM order_products op
+                JOIN (
+                    SELECT DISTINCT se.order_id
+                    FROM scan_events se
+                    WHERE se.scan_session_id = ?
+                    AND se.order_id IS NOT NULL
+                ) o ON op.order_id = o.order_id
+                GROUP BY op.order_id, op.product_id
+            ) op
 
-                    $scannedQty = $scanned[$productId]->scanned_qty ?? 0;
+            LEFT JOIN
+            (
+                SELECT
+                    order_id,
+                    product_id,
+                    COUNT(*) scanned_qty
+                FROM scan_events
+                WHERE scan_session_id = ?
+                AND order_id IS NOT NULL
+                GROUP BY order_id, product_id
+            ) se
 
-                    if ($scannedQty < $exp->expected_qty) {
-                        $status = 'MISSING';
-                    } elseif ($scannedQty > $exp->expected_qty) {
-                        $status = 'EXTRA';
-                    } else {
-                        $status = 'OK';
-                    }
-
-                    $results[] = [
-                        'scan_session_id' => $this->scanSessionId,
-                        'order_id'        => $orderId,
-                        'product_id'      => $productId,
-                        'expected_qty'    => $exp->expected_qty,
-                        'scanned_qty'     => $scannedQty,
-                        'status'          => $status,
-                        'created_at'      => now(),
-                    ];
-                }
-
-                // Productos escaneados que no estaban esperados en esta orden
-                foreach ($scanned as $productId => $scan) {
-                    if (!isset($expected[$productId])) {
-                        $results[] = [
-                            'scan_session_id' => $this->scanSessionId,
-                            'order_id'        => $orderId,
-                            'product_id'      => $productId,
-                            'expected_qty'    => 0,
-                            'scanned_qty'     => $scan->scanned_qty,
-                            'status'          => 'EXTRA',
-                            'created_at'      => now(),
-                        ];
-                    }
-                }
-
-                if (!empty($results)) {
-                    DB::table('scan_product_results')->insert($results);
-                }
-
-                /*
-                |--------------------------------------------------------------------------
-                | 4️⃣ Totales por orden
-                |--------------------------------------------------------------------------
-                */
-
-                $totals = DB::table('scan_product_results')
-                    ->where('scan_session_id', $this->scanSessionId)
-                    ->where('order_id', $orderId)
-                    ->selectRaw('
-                        SUM(expected_qty) as expected_total,
-                        SUM(scanned_qty) as scanned_total,
-                        SUM(CASE WHEN scanned_qty < expected_qty THEN expected_qty - scanned_qty ELSE 0 END) as missing_total,
-                        SUM(CASE WHEN scanned_qty > expected_qty THEN scanned_qty - expected_qty ELSE 0 END) as extra_total
-                    ')
-                    ->first();
-
-                $missing = (int) ($totals->missing_total ?? 0);
-                $extra   = (int) ($totals->extra_total ?? 0);
-
-                if ($missing === 0 && $extra === 0) {
-                    $orderStatus = 'COMPLETE';
-                } elseif ($missing > 0 && $extra === 0) {
-                    $orderStatus = 'INCOMPLETE';
-                } elseif ($missing === 0 && $extra > 0) {
-                    $orderStatus = 'OVER_SCANNED';
-                } else {
-                    $orderStatus = 'PARTIAL';
-                }
-
-                DB::table('scan_session_results')->insert([
-                    'scan_session_id' => $this->scanSessionId,
-                    'dock_id'         => $dockId,
-                    'order_id'        => $orderId,
-                    'expected_total'  => $totals->expected_total ?? 0,
-                    'scanned_total'   => $totals->scanned_total ?? 0,
-                    'missing_total'   => $missing,
-                    'extra_total'     => $extra,
-                    'status'          => $orderStatus,
-                    'created_at'      => now(),
-                    'updated_at'      => now()
-                ]);
-            }
+            ON op.order_id = se.order_id
+            AND op.product_id = se.product_id
+            ", [
+                $this->scanSessionId,
+                $this->scanSessionId,
+                $this->scanSessionId
+            ]);
 
             /*
             |--------------------------------------------------------------------------
-            | 5️⃣ Extras globales (order_id NULL)
+            | Insertar productos extras
+            |--------------------------------------------------------------------------
+            */
+
+            DB::insert("
+                INSERT INTO scan_product_results
+                (scan_session_id, order_id, product_id, expected_qty, scanned_qty, status, created_at)
+
+                SELECT
+                    ?,
+                    se.order_id,
+                    se.product_id,
+                    0,
+                    COUNT(*),
+                    'EXTRA',
+                    NOW()
+
+                FROM scan_events se
+
+                LEFT JOIN order_products op
+                ON op.order_id = se.order_id
+                AND op.product_id = se.product_id
+
+                WHERE se.scan_session_id = ?
+                AND se.order_id IS NOT NULL
+                AND op.product_id IS NULL
+
+                GROUP BY se.order_id, se.product_id
+            ", [
+                $this->scanSessionId,
+                $this->scanSessionId
+            ]);
+
+            /*
+            |--------------------------------------------------------------------------
+            | Generar resultados por orden
+            |--------------------------------------------------------------------------
+            */
+
+            DB::insert("
+                INSERT INTO scan_session_results
+                (
+                    scan_session_id,
+                    dock_id,
+                    order_id,
+                    expected_total,
+                    scanned_total,
+                    missing_total,
+                    extra_total,
+                    status,
+                    created_at,
+                    updated_at
+                )
+
+                SELECT
+                    ?,
+                    ?,
+                    order_id,
+
+                    SUM(expected_qty),
+                    SUM(scanned_qty),
+
+                    SUM(
+                        CASE
+                            WHEN scanned_qty < expected_qty
+                            THEN expected_qty - scanned_qty
+                            ELSE 0
+                        END
+                    ),
+
+                    SUM(
+                        CASE
+                            WHEN scanned_qty > expected_qty
+                            THEN scanned_qty - expected_qty
+                            ELSE 0
+                        END
+                    ),
+
+                    CASE
+                        WHEN SUM(CASE WHEN scanned_qty < expected_qty THEN 1 ELSE 0 END) = 0
+                        AND SUM(CASE WHEN scanned_qty > expected_qty THEN 1 ELSE 0 END) = 0
+                        THEN 'COMPLETE'
+
+                        WHEN SUM(CASE WHEN scanned_qty < expected_qty THEN 1 ELSE 0 END) > 0
+                        AND SUM(CASE WHEN scanned_qty > expected_qty THEN 1 ELSE 0 END) = 0
+                        THEN 'INCOMPLETE'
+
+                        WHEN SUM(CASE WHEN scanned_qty < expected_qty THEN 1 ELSE 0 END) = 0
+                        AND SUM(CASE WHEN scanned_qty > expected_qty THEN 1 ELSE 0 END) > 0
+                        THEN 'OVER_SCANNED'
+
+                        ELSE 'PARTIAL'
+                    END,
+
+                    NOW(),
+                    NOW()
+
+                FROM scan_product_results
+                WHERE scan_session_id = ?
+                GROUP BY order_id
+            ", [
+                $this->scanSessionId,
+                $dockId,
+                $this->scanSessionId
+            ]);
+
+            /*
+            |--------------------------------------------------------------------------
+            | Extras globales
             |--------------------------------------------------------------------------
             */
 
@@ -196,54 +231,40 @@ class CloseScanSessionJob implements ShouldQueue
 
             /*
             |--------------------------------------------------------------------------
-            | 6️⃣ Totales globales de sesión
+            | Totales globales
             |--------------------------------------------------------------------------
             */
 
             $sessionTotals = DB::table('scan_session_results')
                 ->where('scan_session_id', $this->scanSessionId)
                 ->selectRaw('
-                    SUM(expected_total) as expected_total,
-                    SUM(scanned_total) as scanned_total,
-                    SUM(missing_total) as missing_total,
-                    SUM(extra_total) as extra_total
+                    SUM(expected_total) expected_total,
+                    SUM(scanned_total) scanned_total,
+                    SUM(missing_total) missing_total,
+                    SUM(extra_total) extra_total
                 ')
                 ->first();
 
-            $expectedTotal = (int) ($sessionTotals->expected_total ?? 0);
-            $scannedTotal  = (int) ($sessionTotals->scanned_total ?? 0);
-            $missingTotal  = (int) ($sessionTotals->missing_total ?? 0);
-            $extraTotal    = (int) ($sessionTotals->extra_total ?? 0) + $globalExtras;
+            $missingTotal = (int) ($sessionTotals->missing_total ?? 0);
+            $extraTotal   = (int) ($sessionTotals->extra_total ?? 0) + $globalExtras;
 
             if ($missingTotal === 0 && $extraTotal === 0) {
-                $finalStatus = 'COMPLETE';
+                $status = 'COMPLETE';
             } elseif ($missingTotal > 0 && $extraTotal === 0) {
-                $finalStatus = 'INCOMPLETE';
+                $status = 'INCOMPLETE';
             } elseif ($missingTotal === 0 && $extraTotal > 0) {
-                $finalStatus = 'OVER_SCANNED';
+                $status = 'OVER_SCANNED';
             } else {
-                $finalStatus = 'PARTIAL';
+                $status = 'PARTIAL';
             }
-
-            /*
-            |--------------------------------------------------------------------------
-            | 7️⃣ Cerrar sesión
-            |--------------------------------------------------------------------------
-            */
 
             DB::table('order_scan_sessions')
                 ->where('scan_session_id', $this->scanSessionId)
                 ->update([
-                    'status'     => $finalStatus,
-                    'closed_at'  => now(),
+                    'status' => $status,
+                    'closed_at' => now(),
                     'updated_at' => now()
                 ]);
-
-            logger("Scan session closed", [
-                'scan_session_id' => $this->scanSessionId,
-                'final_status'    => $finalStatus,
-                'global_extras'   => $globalExtras
-            ]);
         });
     }
 }

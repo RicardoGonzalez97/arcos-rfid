@@ -16,7 +16,9 @@ class DatabaseSeeder extends Seeder
         // User::factory(10)->create();
 
        $this->call([
-            PurchaseOrderSeeder::class
+            PurchaseOrderSeeder::class,
+            SupplierAppointmentSlotDockSeeder::class,
+            DockPurchaseOrderSeeder::class
         ]);
     }
 }

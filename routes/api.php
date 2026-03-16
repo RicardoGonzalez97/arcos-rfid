@@ -3,6 +3,7 @@ use App\Http\Controllers\ScanSessionResultController;
 use App\Http\Controllers\ScanSessionController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\PowerController;
+use App\Http\Controllers\RfidController;
 
 
 Route::post('/scan-sessions', [ScanSessionController::class, 'store']); 
@@ -20,3 +21,6 @@ Route::get('/docks/{dockId}/closed-results',
 );
 
 Route::post('/power/report', [PowerController::class, 'report']);
+
+Route::post('/rfid/start', [RfidController::class,'start']);
+Route::post('/rfid/stop', [RfidController::class,'stop']);

@@ -12,40 +12,56 @@ use App\Traits\ApiResponse;
 use App\Services\PurchaseOrderNormalizer;
 use App\Models\PurchaseOrder;
 use App\Models\Product;
+use App\Jobs\NormalizeDockOrdersJob;
 
 class ScanSessionController extends Controller
 {
 use ApiResponse;
 
 #1er paso crear sesión de escaneo
-public function store(Request $request, PurchaseOrderNormalizer $normalizer)
+public function store(Request $request)
 {
     $request->validate([
         'dock_id' => 'required|integer'
     ]);
 
+    $dockId = $request->dock_id;
+
     /*
     |--------------------------------------------------------------------------
-    | 🔥 0️⃣ Normalizar purchase orders antes de escanear
-    |--------------------------------------------------------------------------
-    */
-logger('Antes de normalizar');
-    PurchaseOrder::query()
-        ->pluck('id')
-        ->each(function ($purchaseOrderId) use ($normalizer) {
-            $normalizer->normalize($purchaseOrderId);
-        });
-logger('despues de normalizar');
-    /*
-    |--------------------------------------------------------------------------
-    | 1️⃣ Flujo normal
+    | 1️⃣ Obtener purchase orders asignadas al dock
     |--------------------------------------------------------------------------
     */
 
-    return DB::transaction(function () use ($request) {
-logger('entra despues de normalizar');
+    $purchaseOrders = DB::table('dock_purchase_orders')
+        ->where('dock_id', $dockId)
+        ->pluck('purchase_order_id');
+
+    if ($purchaseOrders->isEmpty()) {
+        return $this->fail(
+            'No purchase orders assigned to this dock.',
+            404
+        );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | 2️⃣ Mandar normalización a la cola
+    |--------------------------------------------------------------------------
+    */
+
+    NormalizeDockOrdersJob::dispatch($dockId);
+
+    /*
+    |--------------------------------------------------------------------------
+    | 3️⃣ Crear scan session
+    |--------------------------------------------------------------------------
+    */
+
+    return DB::transaction(function () use ($dockId, $purchaseOrders) {
+
         $existingOpenSession = DB::table('order_scan_sessions')
-            ->where('dock_id', $request->dock_id)
+            ->where('dock_id', $dockId)
             ->where('status', 'OPEN')
             ->lockForUpdate()
             ->first();
@@ -57,42 +73,22 @@ logger('entra despues de normalizar');
             );
         }
 
-        $orders = DB::table('orders')
-            ->where('dock_id', $request->dock_id)
-            ->lockForUpdate()
-            ->pluck('order_id');
-
-        if ($orders->isEmpty()) {
-            return $this->fail(
-                'No orders found for this dock.',
-                404
-            );
-        }
-
         $scanSessionId = (string) \Str::uuid();
 
         DB::table('order_scan_sessions')->insert([
             'scan_session_id' => $scanSessionId,
-            'dock_id'         => $request->dock_id,
+            'dock_id'         => $dockId,
             'status'          => 'OPEN',
             'created_at'      => now(),
             'updated_at'      => now(),
         ]);
 
-        $insertData = $orders->map(fn($orderId) => [
-            'scan_session_id' => $scanSessionId,
-            'order_id'        => $orderId,
-            'created_at'      => now(),
-            'updated_at'      => now(),
-        ])->toArray();
-
-        DB::table('scan_session_orders')->insert($insertData);
-
         return $this->created([
             'scan_session_id' => $scanSessionId,
-            'dock_id'         => $request->dock_id,
-            'orders_linked'   => $orders
+            'dock_id'         => $dockId,
+            'orders_linked'   => $purchaseOrders
         ], 'Scan session created successfully');
+
     });
 }
 
@@ -417,10 +413,22 @@ public function show(int $dockId)
 
     /*
     |--------------------------------------------------------------------------
-    | 2️⃣ Obtener resultados por orden
+    | 2️⃣ Obtener resultados por orden (sin extra_total)
     |--------------------------------------------------------------------------
     */
     $orders = DB::table('scan_session_results')
+        ->select([
+            'scan_session_results_id',
+            'scan_session_id',
+            'order_id',
+            'dock_id',
+            'expected_total',
+            'scanned_total',
+            'missing_total',
+            'status',
+            'created_at',
+            'updated_at'
+        ])
         ->where('scan_session_id', $session->scan_session_id)
         ->get();
 
@@ -433,36 +441,55 @@ public function show(int $dockId)
 
     /*
     |--------------------------------------------------------------------------
-    | 3️⃣ Totales globales
+    | 3️⃣ Totales globales (calculados en SQL para mejor rendimiento)
     |--------------------------------------------------------------------------
     */
-    $expectedTotal = $orders->sum('expected_total');
-    $scannedTotal  = $orders->sum('scanned_total');
-    $missingTotal  = $orders->sum('missing_total');
-     $extraTotal = DB::table('scan_events')
-    ->where('scan_session_id', $session->scan_session_id)
-    ->where('event_status', 'extra')
-    ->count();
+    $totals = DB::table('scan_session_results')
+        ->where('scan_session_id', $session->scan_session_id)
+        ->selectRaw('
+            SUM(expected_total) as expected_total,
+            SUM(scanned_total) as scanned_total,
+            SUM(missing_total) as missing_total
+        ')
+        ->first();
 
+    $expectedTotal = $totals->expected_total ?? 0;
+    $scannedTotal  = $totals->scanned_total ?? 0;
+    $missingTotal  = $totals->missing_total ?? 0;
+
+    /*
+    |--------------------------------------------------------------------------
+    | 4️⃣ Extras globales (no pertenecen a órdenes)
+    |--------------------------------------------------------------------------
+    */
+    $extraTotal = DB::table('scan_events')
+        ->where('scan_session_id', $session->scan_session_id)
+        ->where('event_status', 'extra')
+        ->count();
+
+    /*
+    |--------------------------------------------------------------------------
+    | 5️⃣ Respuesta final
+    |--------------------------------------------------------------------------
+    */
     return $this->ok(
         data: [
             'dock_id'         => $dockId,
             'scan_session_id' => $session->scan_session_id,
             'session_status'  => $session->status,
             'closed_at'       => $session->closed_at,
+
             'totals' => [
-                'expected_total' => $expectedTotal,
-                'scanned_total'  => $scannedTotal,
-                'missing_total'  => $missingTotal,
-                'extra_total'    => $extraTotal,
+                'expected_total' => (int) $expectedTotal,
+                'scanned_total'  => (int) $scannedTotal,
+                'missing_total'  => (int) $missingTotal,
+                'extra_total'    => (int) $extraTotal,
             ],
+
             'orders' => $orders
         ],
         message: 'Closed scan session results retrieved successfully'
     );
 }
-
-
-
 
 }

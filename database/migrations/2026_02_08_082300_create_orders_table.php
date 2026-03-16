@@ -11,17 +11,15 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('orders', function (Blueprint $table) {
+       Schema::create('orders', function (Blueprint $table) {
             $table->bigIncrements('order_id');
-
+            $table->unsignedBigInteger('purchase_order_id');
             $table->string('location', 100);
             $table->string('type', 50);
             $table->unsignedBigInteger('truck_id')->nullable();
             $table->unsignedBigInteger('dock_id')->nullable();
             $table->timestamp('created_at')->useCurrent();
-            // índices útiles
-            $table->index('truck_id');
-            $table->index('created_at');
+            $table->index('dock_id');
         });
     }
 

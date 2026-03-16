@@ -40,11 +40,13 @@ return new class extends Migration
             ->nullOnDelete();
 
         // 🔥 Índices
-        $table->index('scan_session_id');
+        $table->index(['scan_session_id', 'event_status']);
         $table->index('dock_id');
         $table->index(['dock_id', 'event_status']);
+        $table->index(['scan_session_id', 'product_id']);
         $table->index('product_id');
         $table->index('order_id');
+        $table->index('scanned_at');
     });
 }
 

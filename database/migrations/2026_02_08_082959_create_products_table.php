@@ -16,7 +16,7 @@ return new class extends Migration
             $table->string('name');
             $table->string('provider')->nullable();
             $table->string('code')->unique();
-            $table->timestamp('created_at')->useCurrent();
+            $table->timestamps();
         });
 
     }
