@@ -17,7 +17,7 @@ RUN docker-php-ext-install pdo pdo_mysql sockets
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
 # copiar proyecto
-COPY . .
+COPY .. .
 
 # instalar dependencias Laravel
 RUN composer install --optimize-autoloader
