@@ -5,18 +5,24 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\PowerController;
 use App\Http\Controllers\RfidController;
 
+Route::get('test', function () {
+    return response()->json([
+        'message' => 'Hello World'
+    ]);
+});
 
-Route::post('/scan-sessions', [ScanSessionController::class, 'store']); 
+
+Route::post('/scan-sessions', [ScanSessionController::class, 'store']);
 // crea sesión por dock_id en body
 
-Route::post('/scan-events/batch', [ScanSessionController::class, 'batch']); 
+Route::post('/scan-events/batch', [ScanSessionController::class, 'batch']);
 // procesa por dock_id
 
-Route::post('/docks/{dockId}/close-session', 
+Route::post('/docks/{dockId}/close-session',
     [ScanSessionController::class, 'close']
 );
 
-Route::get('/docks/{dockId}/closed-results', 
+Route::get('/docks/{dockId}/closed-results',
     [ScanSessionController::class, 'show']
 );
 
