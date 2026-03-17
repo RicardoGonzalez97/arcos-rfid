@@ -12,182 +12,255 @@ class PurchaseOrderNormalizer
 {
     public function normalize(int $purchaseOrderId): void
     {
-        DB::transaction(function () use ($purchaseOrderId) {
+        logger()->info('🚀 START normalize()', [
+            'purchase_order_id' => $purchaseOrderId
+        ]);
 
-            $now = now();
+        try {
 
-            /*
-            |--------------------------------------------------------------------------
-            | 0️⃣ Evitar doble integración (lock para queues)
-            |--------------------------------------------------------------------------
-            */
+            DB::transaction(function () use ($purchaseOrderId) {
 
-            $alreadyIntegrated = ExternalIntegration::where([
-                'external_source' => 'SQLITE_DEMO',
-                'external_type'   => 'purchase_order',
-                'external_id'     => $purchaseOrderId,
-            ])
-            ->lockForUpdate()
-            ->exists();
+                $now = now();
 
-            if ($alreadyIntegrated) {
-                return;
-            }
+                logger()->info('🧩 Transaction started');
 
-            /*
-            |--------------------------------------------------------------------------
-            | 1️⃣ Obtener purchase order con items
-            |--------------------------------------------------------------------------
-            */
+                /*
+                |------------------------------------------------------------------
+                | 0️⃣ Evitar doble integración
+                |------------------------------------------------------------------
+                */
 
-            $purchaseOrder = PurchaseOrder::with('items')
-                ->findOrFail($purchaseOrderId);
-
-            /*
-            |--------------------------------------------------------------------------
-            | 2️⃣ Obtener dock asignado
-            |--------------------------------------------------------------------------
-            */
-
-            $dockId = DB::table('dock_purchase_orders')
-                ->where('purchase_order_id', $purchaseOrderId)
-                ->value('dock_id');
-
-            if (!$dockId) {
-                throw new \Exception("No dock assigned to purchase order {$purchaseOrderId}");
-            }
-
-            /*
-            |--------------------------------------------------------------------------
-            | 3️⃣ Crear orden interna (ID = purchase_order_id)
-            |--------------------------------------------------------------------------
-            */
-
-            $order = Order::where('order_id', $purchaseOrder->id)->first();
-
-            if (!$order) {
-
-                $order = Order::create([
-                    'order_id'          => $purchaseOrder->id,
-                    'purchase_order_id' => $purchaseOrder->id,
-                    'location'          => $purchaseOrder->ciudad ?? 'DEFAULT',
-                    'type'              => $purchaseOrder->tipo ?? 'PURCHASE',
-                    'dock_id'           => $dockId,
-                ]);
-            }
-
-            /*
-            |--------------------------------------------------------------------------
-            | 4️⃣ Registrar integración
-            |--------------------------------------------------------------------------
-            */
-
-            ExternalIntegration::updateOrInsert(
-                [
+                $alreadyIntegrated = ExternalIntegration::where([
                     'external_source' => 'SQLITE_DEMO',
                     'external_type'   => 'purchase_order',
-                    'external_id'     => $purchaseOrder->id,
-                ],
-                [
-                    'internal_order_id' => $order->order_id,
-                    'created_at'        => $now,
-                    'updated_at'        => $now
-                ]
-            );
+                    'external_id'     => $purchaseOrderId,
+                ])
+                ->lockForUpdate()
+                ->exists();
 
-            /*
-            |--------------------------------------------------------------------------
-            | 5️⃣ Preparar items
-            |--------------------------------------------------------------------------
-            */
+                logger()->info('🔍 alreadyIntegrated check', [
+                    'result' => $alreadyIntegrated
+                ]);
 
-            $items = $purchaseOrder->items;
+                if ($alreadyIntegrated) {
+                    logger()->warning('⚠️ SKIP: ya estaba integrada', [
+                        'purchase_order_id' => $purchaseOrderId
+                    ]);
+                    return;
+                }
 
-            if ($items->isEmpty()) {
-                return;
-            }
+                /*
+                |------------------------------------------------------------------
+                | 1️⃣ Obtener purchase order
+                |------------------------------------------------------------------
+                */
 
-            $productIds = $items
-                ->pluck('id')
-                ->map(fn ($id) => (string) $id)
-                ->toArray();
+                $purchaseOrder = PurchaseOrder::with('items')
+                    ->findOrFail($purchaseOrderId);
 
-            /*
-            |--------------------------------------------------------------------------
-            | 6️⃣ Obtener productos existentes
-            |--------------------------------------------------------------------------
-            */
+                logger()->info('📦 PurchaseOrder loaded', [
+                    'id' => $purchaseOrder->id,
+                    'items_count' => $purchaseOrder->items->count()
+                ]);
 
-            $existingProducts = Product::whereIn('product_id', $productIds)
-                ->pluck('product_id')
-                ->flip()
-                ->toArray();
+                /*
+                |------------------------------------------------------------------
+                | 2️⃣ Obtener dock
+                |------------------------------------------------------------------
+                */
 
-            /*
-            |--------------------------------------------------------------------------
-            | 7️⃣ Insertar productos faltantes (batch)
-            |--------------------------------------------------------------------------
-            */
+                $dockId = DB::table('dock_purchase_orders')
+                    ->where('purchase_order_id', $purchaseOrderId)
+                    ->value('dock_id');
 
-            $productsToInsert = [];
+                logger()->info('🚚 Dock lookup', [
+                    'dock_id' => $dockId
+                ]);
 
-            foreach ($items as $item) {
+                if (!$dockId) {
+                    logger()->error('❌ No dock found');
+                    throw new \Exception("No dock assigned to purchase order {$purchaseOrderId}");
+                }
 
-                $productId = (string) $item->id;
+                /*
+                |------------------------------------------------------------------
+                | 3️⃣ Crear order
+                |------------------------------------------------------------------
+                */
 
-                if (!isset($existingProducts[$productId])) {
+                $order = Order::where('order_id', $purchaseOrder->id)->first();
 
-                    $productsToInsert[] = [
-                        'product_id' => $productId,
-                        'code'       => $item->codigo_cliente,
-                        'name'       => $item->modelo ?? 'SIN NOMBRE',
-                        'provider'   => $purchaseOrder->proveedor,
-                        'created_at' => $now,
-                        'updated_at' => $now,
+                if (!$order) {
+
+                    logger()->info('🆕 Creating order');
+
+                    $order = Order::create([
+                        'order_id'          => $purchaseOrder->id,
+                        'purchase_order_id' => $purchaseOrder->id,
+                        'location'          => $purchaseOrder->ciudad ?? 'DEFAULT',
+                        'type'              => $purchaseOrder->tipo ?? 'PURCHASE',
+                        'dock_id'           => $dockId,
+                    ]);
+
+                } else {
+                    logger()->info('ℹ️ Order already exists', [
+                        'order_id' => $order->order_id
+                    ]);
+                }
+
+                /*
+                |------------------------------------------------------------------
+                | 4️⃣ Registrar integración
+                |------------------------------------------------------------------
+                */
+
+                logger()->info('🧾 Registering integration');
+
+                ExternalIntegration::updateOrInsert(
+                    [
+                        'external_source' => 'SQLITE_DEMO',
+                        'external_type'   => 'purchase_order',
+                        'external_id'     => $purchaseOrder->id,
+                    ],
+                    [
+                        'internal_order_id' => $order->order_id,
+                        'created_at'        => $now,
+                        'updated_at'        => $now
+                    ]
+                );
+
+                /*
+                |------------------------------------------------------------------
+                | 5️⃣ Items
+                |------------------------------------------------------------------
+                */
+
+                $items = $purchaseOrder->items;
+
+                if ($items->isEmpty()) {
+                    logger()->warning('⚠️ No items found → EXIT');
+                    return;
+                }
+
+                logger()->info('📦 Items ready', [
+                    'count' => $items->count()
+                ]);
+
+                $productIds = $items
+                    ->pluck('id')
+                    ->map(fn ($id) => (string) $id)
+                    ->toArray();
+
+                logger()->info('🔑 Product IDs', [
+                    'ids' => $productIds
+                ]);
+
+                /*
+                |------------------------------------------------------------------
+                | 6️⃣ Productos existentes
+                |------------------------------------------------------------------
+                */
+
+                $existingProducts = Product::whereIn('product_id', $productIds)
+                    ->pluck('product_id')
+                    ->flip()
+                    ->toArray();
+
+                logger()->info('📦 Existing products', [
+                    'count' => count($existingProducts)
+                ]);
+
+                /*
+                |------------------------------------------------------------------
+                | 7️⃣ Insertar nuevos productos
+                |------------------------------------------------------------------
+                */
+
+                $productsToInsert = [];
+
+                foreach ($items as $item) {
+
+                    $productId = (string) $item->id;
+
+                    if (!isset($existingProducts[$productId])) {
+
+                        $productsToInsert[] = [
+                            'product_id' => $productId,
+                            'code'       => $item->codigo_cliente,
+                            'name'       => $item->modelo ?? 'SIN NOMBRE',
+                            'provider'   => $purchaseOrder->proveedor,
+                            'created_at' => $now,
+                            'updated_at' => $now,
+                        ];
+                    }
+                }
+
+                logger()->info('🆕 Products to insert', [
+                    'count' => count($productsToInsert)
+                ]);
+
+                if (!empty($productsToInsert)) {
+                    DB::table('products')->insert($productsToInsert);
+                    logger()->info('✅ Products inserted');
+                }
+
+                /*
+                |------------------------------------------------------------------
+                | 8️⃣ Limpiar order_products
+                |------------------------------------------------------------------
+                */
+
+                DB::table('order_products')
+                    ->where('order_id', $order->order_id)
+                    ->delete();
+
+                logger()->info('🧹 order_products cleaned');
+
+                /*
+                |------------------------------------------------------------------
+                | 9️⃣ Insertar order_products
+                |------------------------------------------------------------------
+                */
+
+                $orderProductsInsert = [];
+
+                foreach ($items as $item) {
+
+                    $productId = (string) $item->id;
+
+                    $orderProductsInsert[] = [
+                        'order_id'          => $order->order_id,
+                        'product_id'        => $productId,
+                        'expected_quantity' => $item->cantidad,
+                        'received_quantity' => 0,
+                        'unit_price'        => $item->precio_unitario,
+                        'is_completed'      => false,
+                        'created_at'        => $now,
+                        'updated_at'        => $now,
                     ];
                 }
-            }
 
-            if (!empty($productsToInsert)) {
-                DB::table('products')->insert($productsToInsert);
-            }
+                logger()->info('📦 order_products prepared', [
+                    'count' => count($orderProductsInsert)
+                ]);
 
-            /*
-            |--------------------------------------------------------------------------
-            | 8️⃣ Limpiar order_products si el job se ejecuta otra vez
-            |--------------------------------------------------------------------------
-            */
+                DB::table('order_products')->insert($orderProductsInsert);
 
-            DB::table('order_products')
-                ->where('order_id', $order->order_id)
-                ->delete();
+                logger()->info('✅ order_products inserted');
 
-            /*
-            |--------------------------------------------------------------------------
-            | 9️⃣ Insertar order_products en batch
-            |--------------------------------------------------------------------------
-            */
+            });
 
-            $orderProductsInsert = [];
+            logger()->info('🎉 END normalize() SUCCESS');
 
-            foreach ($items as $item) {
+        } catch (\Throwable $e) {
 
-                $productId = (string) $item->id;
+            logger()->error('💥 ERROR normalize()', [
+                'purchase_order_id' => $purchaseOrderId,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
 
-                $orderProductsInsert[] = [
-                    'order_id'          => $order->order_id,
-                    'product_id'        => $productId,
-                    'expected_quantity' => $item->cantidad,
-                    'received_quantity' => 0,
-                    'unit_price'        => $item->precio_unitario,
-                    'is_completed'      => false,
-                    'created_at'        => $now,
-                    'updated_at'        => $now,
-                ];
-            }
-
-            DB::table('order_products')->insert($orderProductsInsert);
-
-        });
+            throw $e;
+        }
     }
 }
