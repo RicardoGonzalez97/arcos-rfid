@@ -197,6 +197,7 @@ public function batch(Request $request)
                 return [
                     'error' => true,
                     'message' => 'Some products do not exist',
+                    'LED' => 'ROJO',
                     'invalid_products' => $invalidProducts
                 ];
             }
