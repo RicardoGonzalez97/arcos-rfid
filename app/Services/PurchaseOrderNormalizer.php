@@ -135,7 +135,9 @@ class PurchaseOrderNormalizer
                 |------------------------------------------------------------------
                 */
 
-                $items = $purchaseOrder->items;
+                $items = DB::table('purchase_order_items')
+                ->where('purchase_order_id', $purchaseOrderId)
+                ->get();
 
                 if ($items->isEmpty()) {
                     logger()->warning('⚠️ No items found → EXIT');
