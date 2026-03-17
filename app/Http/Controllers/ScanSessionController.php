@@ -197,8 +197,8 @@ public function batch(Request $request)
                 return [
                     'error' => true,
                     'message' => 'Some products do not exist',
-                    'LED' => 'ROJO',
-                    'invalid_products' => $invalidProducts
+                    'invalid_products' => $invalidProducts,
+                     'LED' => 'ROJO',
                 ];
             }
 
@@ -339,7 +339,8 @@ public function batch(Request $request)
             return response()->json([
                 'success' => false,
                 'message' => $result['message'],
-                'invalid_products' => $result['invalid_products'] ?? []
+                'invalid_products' => $result['invalid_products'] ?? [],
+                'LED' =>'ROJO'
             ], 422);
         }
 
