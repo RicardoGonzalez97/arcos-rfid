@@ -335,12 +335,14 @@ public function batch(Request $request)
             ];
         });
 
-        if (isset($result['error']) && $result['error'] === true) {
+       if (isset($result['error']) && $result['error'] === true) {
             return response()->json([
                 'success' => false,
                 'message' => $result['message'],
-                'invalid_products' => $result['invalid_products'] ?? [],
-                'LED' =>'ROJO'
+                'data' => [
+                    'invalid_products' => $result['invalid_products'] ?? [],
+                    'LED' => 'ROJO'
+                ]
             ], 422);
         }
 
