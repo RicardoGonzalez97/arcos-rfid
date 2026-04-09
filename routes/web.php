@@ -1,16 +1,37 @@
 <?php
 
+use App\Http\Controllers\ProfileController;
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\HolaController;
-use App\Http\Controllers\DebugController;
-
 
 Route::get('/', function () {
     return view('welcome');
 });
 
-Route::get('/hola', [HolaController::class, 'hola']);
+Route::get('/dashboard', function () {
+    return view('dashboard');
+})->middleware(['auth', 'verified'])->name('dashboard');
 
-Route::get('/debug', function () {
-    return view('debug');
+Route::middleware('auth')->group(function () {
+    Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
+    Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
+    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 });
+
+
+Route::get('/test-broadcast', function () {
+
+    event(new \App\Events\ProductScanned([
+        'timestamp' => now()->format('H:i:s'),
+        'product_id' => 'TEST123',
+        'product_name' => 'Producto Test',
+        'status' => 'scanned',
+        'cantidad' => 1,
+        'order_id' => 'ORD001'
+    ], 1));
+
+    return 'ok';
+});
+
+
+
+require __DIR__.'/auth.php';

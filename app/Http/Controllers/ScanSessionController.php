@@ -211,62 +211,86 @@ public function batch(Request $request)
             | 4️⃣ Procesar productos
             |--------------------------------------------------------------------------
             */
-            foreach ($groupedProducts as $productId => $totalQty) {
+            logger()->info('ENTRANDO AL FOREACH');
+           foreach ($groupedProducts as $productId => $totalQty) {
 
-                $productId = (string) $productId;
+            $productId = (string) $productId;
 
-                $qtyToAssign = $totalQty;
-                $pendingOrderProducts = $orderProducts[$productId] ?? collect();
+            $qtyToAssign = $totalQty;
+            $pendingOrderProducts = $orderProducts[$productId] ?? collect();
 
-                foreach ($pendingOrderProducts as $op) {
+            $orderId = null;
 
-                    if ($qtyToAssign <= 0) break;
+            foreach ($pendingOrderProducts as $op) {
 
-                    $remaining = $op->expected_quantity - $op->received_quantity;
-                    if ($remaining <= 0) continue;
+                if ($qtyToAssign <= 0) break;
 
-                    $assign = min($qtyToAssign, $remaining);
+                $remaining = $op->expected_quantity - $op->received_quantity;
+                if ($remaining <= 0) continue;
 
-                    DB::table('order_products')
-                        ->where('order_products_id', $op->order_products_id)
-                        ->increment('received_quantity', $assign);
+                $assign = min($qtyToAssign, $remaining);
 
-                    for ($i = 0; $i < $assign; $i++) {
-                        $insertData[] = [
-                            'scan_session_id' => $scanSessionId,
-                            'dock_id'         => $dockId,
-                            'order_id'        => $op->order_id,
-                            'product_id'      => $productId,
-                            'event_status'    => 'scanned',
-                            'scanned_at'      => $now,
-                        ];
-                    }
+                DB::table('order_products')
+                    ->where('order_products_id', $op->order_products_id)
+                    ->increment('received_quantity', $assign);
 
-                    $scannedCount += $assign;
-                    $qtyToAssign -= $assign;
+                $orderId = $op->order_id;
+
+                for ($i = 0; $i < $assign; $i++) {
+                    $insertData[] = [
+                        'scan_session_id' => $scanSessionId,
+                        'dock_id'         => $dockId,
+                        'order_id'        => $op->order_id,
+                        'product_id'      => $productId,
+                        'event_status'    => 'scanned',
+                        'scanned_at'      => $now,
+                    ];
                 }
 
-                /*
-                |--------------------------------------------------------------------------
-                | Extras
-                |--------------------------------------------------------------------------
-                */
-                if ($qtyToAssign > 0) {
-
-                    for ($i = 0; $i < $qtyToAssign; $i++) {
-                        $insertData[] = [
-                            'scan_session_id' => $scanSessionId,
-                            'dock_id'         => $dockId,
-                            'order_id'        => null,
-                            'product_id'      => $productId,
-                            'event_status'    => 'extra',
-                            'scanned_at'      => $now,
-                        ];
-                    }
-
-                    $extraCount += $qtyToAssign;
-                }
+                $scannedCount += $assign;
+                $qtyToAssign -= $assign;
             }
+
+        /*
+        |------------------------------------------------------------------
+        | Extras
+        |------------------------------------------------------------------
+        */
+        if ($qtyToAssign > 0) {
+
+            for ($i = 0; $i < $qtyToAssign; $i++) {
+                $insertData[] = [
+                    'scan_session_id' => $scanSessionId,
+                    'dock_id'         => $dockId,
+                    'order_id'        => null,
+                    'product_id'      => $productId,
+                    'event_status'    => 'extra',
+                    'scanned_at'      => $now,
+                ];
+            }
+
+            $extraCount += $qtyToAssign;
+        }
+
+        // 🔥 DEFINE STATUS AQUÍ (ANTES DEL EVENTO)
+        $status = $qtyToAssign > 0 ? 'extra' : 'scanned';
+logger()->info('va por el evento');
+logger()->info('EVENT DOCK ID', [
+    'dockId' => $dockId
+]);
+        $product = Product::where('product_id', $productId)->first();
+
+        $productName = $product?->name ?? 'Unknown';
+       event(new \App\Events\ProductScanned([
+        'timestamp'    => now()->format('H:i:s'),
+        'product_id'   => $productId,
+        'product_name' => $productName,
+        'status'       => $status,
+        'cantidad'     => $totalQty,
+        'order_id'     => $orderId
+        ], $dockId));
+       
+}
 
             /*
             |--------------------------------------------------------------------------

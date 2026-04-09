@@ -21,3 +21,7 @@ yarn-error.log
 /.nova
 /.vscode
 /.zed
+database/migrations/*purchase_orders*
+database/migrations/*purchase_order_items*
+database/migrations/*external_integrations*
+database/migrations/*supplier_appointment_slot_docks*
