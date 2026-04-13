@@ -30,3 +30,5 @@ Route::post('/power/report', [PowerController::class, 'report']);
 
 Route::post('/rfid/start', [RfidController::class,'start']);
 Route::post('/rfid/stop', [RfidController::class,'stop']);
+Route::get('/docks/with-products', [RfidController::class, 'withProducts']);
+Route::get('/docks/initialization', [RfidController::class, 'initialization']);

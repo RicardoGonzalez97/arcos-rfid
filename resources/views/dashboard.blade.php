@@ -517,28 +517,27 @@
                 </div>
 
                 <!-- DERECHA (BOTONES) -->
-                <div class="d-flex gap-2" style="margin-left:20px;">
-
-                    <button class="btn-outline-pause" onclick="pauseSession()">
-                         <img src="/images/pause.png" style="width:14px; height:14px;">
+               <div class="d-flex gap-2" style="margin-left:20px;">
+                    <button id="pause-btn" class="btn-outline-pause" onclick="pauseSession()" style="display: none;">
+                        <img src="/images/pause.png" style="width:14px; height:14px;">
                         Pause
                     </button>
 
-                    <button 
+                    <button id="end-btn"
                         onclick="endSession()"
                         class="btn-outline-danger-custom"
-                    >
+                        style="display: none;">
                         <img src="/images/end-session.png" style="width:14px; height:14px;">
                         End Session
                     </button>
-                   <button 
+
+                    <button id="start-btn"
                         onclick="startSession()"
-                        class = "btn-blue-custom"
-                    >
+                        class="btn-blue-custom"
+                        style="display: none;">
                         <img src="/images/start-session.png" style="width:14px; height:14px;">
                         Start New Session
                     </button>
-
                 </div>
 
             </div>
@@ -547,73 +546,8 @@
 
         <div class="content">
 
-           <div class="cards">
-
-                <div class="reader-card" data-dock="1">
-                    <div class="card-header">
-                        <div class="left">
-                            <img src="/images/monitor.png" class="dock-icon">
-                            <span>Anden 1</span>
-                        </div>
-                        <span class="led active"></span>
-                    </div>
-
-                    <div class="divider"></div>
-
-                    <div class="card-body">
-                        <img src="/images/box-dock.png" class="center-icon">
-                    </div>
-                </div>
-
-                <div class="reader-card" data-dock="2">
-                    <div class="card-header">
-                        <div class="left">
-                            <img src="/images/monitor.png" class="dock-icon">
-                            <span>Anden 2</span>
-                        </div>
-                        <span class="led"></span>
-                    </div>
-
-                    <div class="divider"></div>
-
-                    <div class="card-body">
-                        <img src="/images/box-dock.png" class="center-icon">
-                    </div>
-                </div>
-
-                <div class="reader-card" data-dock="3">
-                    <div class="card-header">
-                        <div class="left">
-                            <img src="/images/monitor.png" class="dock-icon">
-                            <span>Anden 3</span>
-                        </div>
-                        <span class="led"></span>
-                    </div>
-
-                    <div class="divider"></div>
-
-                    <div class="card-body">
-                        <img src="/images/box-dock.png" class="center-icon">
-                    </div>
-                </div>
-
-                <div class="reader-card" data-dock="4">
-                    <div class="card-header">
-                        <div class="left">
-                            <img src="/images/monitor.png" class="dock-icon">
-                            <span>Anden 4</span>
-                        </div>
-                        <span class="led"></span>
-                    </div>
-
-                    <div class="divider"></div>
-
-                    <div class="card-body">
-                        <img src="/images/box-dock.png" class="center-icon">
-                    </div>
-                </div>
-
-            </div>
+           <div class="cards" id="docks-container">
+           </div>
 
             <div class="table-container">
                <div class="table-title">
@@ -642,129 +576,401 @@
     </div>
 
 </div>
-
 <script>
-document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('DOMContentLoaded', () => {
 
-    let currentDockId = localStorage.getItem('dockId')
-        ? parseInt(localStorage.getItem('dockId'))
-        : {{ $dockId ?? 2 }};
+        console.log("✅ Dashboard cargado correctamente");
 
-    let totalTags = 0;
-    let anomalies = 0;
-    let sessionStartedAt = null;
-    let isPaused = false;
+        let currentDockId = localStorage.getItem('dockId')
+            ? parseInt(localStorage.getItem('dockId'))
+            : {{ $dockId ?? 2 }};
 
-    const table = document.getElementById('scan-table-body');
-    const cards = document.querySelectorAll('.reader-card');
+        let totalTags = 0;
+        let anomalies = 0;
+        let isPaused = false;
 
-    const dockData = {1: [],2: [],3: [],4: []};
+        const table = document.getElementById('scan-table-body');
+        let cards = document.querySelectorAll('.reader-card');
 
-    function startSession() {
-        sessionStartedAt = new Date();
-        totalTags = 0;
-        anomalies = 0;
+        const dockData = {};
+        const dockSessions = {};               // { dockId: sessionId }
+        const dockSessionStartTimes = {};      // { dockId: session_started_at }
+        const dockTimers = {};                 // { dockId: intervalId }
+        const echoSubscriptions = {};
 
-        document.getElementById('total-tags').innerText = `0 items`;
-        document.getElementById('anomalies').innerText = `0 Flags`;
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content;
 
-        setInterval(() => {
-            if (sessionStartedAt) {
-                document.getElementById('start-time').innerText =
-                    sessionStartedAt.toLocaleTimeString();
-            }
-        }, 1000);
-    }
-
-    function pauseSession() {
-        isPaused = !isPaused;
-    }
-
-    function endSession() {
-        alert('Session ended');
-    }
-
-    function setActiveCard(dockId) {
-        cards.forEach(card => {
-            card.classList.toggle('active', parseInt(card.dataset.dock) === dockId);
-            card.querySelector('.led').classList.toggle('active', parseInt(card.dataset.dock) === dockId);
-        });
-    }
-
-    function updateDockLabel(dockId) {
-        document.getElementById('dock-label').innerText = `Dock ${dockId}`;
-    }
-
-    function renderTable(dockId) {
-        table.innerHTML = '';
-
-        dockData[dockId].slice().reverse().forEach(d => {
-            table.insertAdjacentHTML('beforeend', rowHTML(d));
-        });
-    }
-
-    function rowHTML(d){
-        return `
-        <tr class="new-row">
-            <td>${d.timestamp || '-'}</td>
-            <td>${d.product_id || '-'}</td>
-            <td>${d.product_name || '---'}</td>
-            <td><span class="badge-status ${d.status}">${d.status || '-'}</span></td>
-            <td>${d.cantidad || 0}</td>
-            <td>${d.order_id || '-'}</td>
-        </tr>`;
-    }
-
-    function connectToDock(dockId) {
-        localStorage.setItem('dockId', dockId);
-        currentDockId = dockId;
-
-        renderTable(dockId);
-        setActiveCard(dockId);
-        updateDockLabel(dockId);
-    }
-
-    function handleEvent(e, dockId) {
-
-        if (isPaused) return;
-
-        const d = e.data || {};
-
-        totalTags += d.cantidad || 1;
-        if (d.status === 'extra') anomalies++;
-
-        document.getElementById('total-tags').innerText = `${totalTags} items`;
-        document.getElementById('anomalies').innerText = `${anomalies} Flags`;
-
-        dockData[dockId].push(d);
-        if (dockData[dockId].length > 100) dockData[dockId].shift();
-
-        if (dockId === currentDockId) {
-            table.insertAdjacentHTML('afterbegin', rowHTML(d));
-            if (table.children.length > 50) table.removeChild(table.lastElementChild);
+        // ==============================
+        // UTILIDADES
+        // ==============================
+        function formatDateTime(dateString) {
+            if (!dateString) return "--:--:--";
+            const date = new Date(dateString);
+            return date.toLocaleString('es-MX', {
+                dateStyle: 'short',
+                timeStyle: 'medium'
+            });
         }
-    }
 
-    function waitForEcho(cb){
-        if(window.Echo) return cb();
-        setTimeout(()=>waitForEcho(cb),100);
-    }
+        function updateSessionButtons(hasActiveSession) {
+            const startBtn = document.getElementById('start-btn');
+            const endBtn = document.getElementById('end-btn');
+            const pauseBtn = document.getElementById('pause-btn');
 
-    waitForEcho(()=>{
-        [1,2,3,4].forEach(id=>{
-            window.Echo.channel(`scan-session.${id}`)
-                .listen('.ProductScanned', e=>handleEvent(e,id));
+            if (hasActiveSession) {
+                startBtn.style.display = 'none';
+                endBtn.style.display = 'flex';
+                pauseBtn.style.display = 'flex';
+            } else {
+                startBtn.style.display = 'flex';
+                endBtn.style.display = 'none';
+                pauseBtn.style.display = 'none';
+            }
+        }
+
+        function setActiveCard(dockId) {
+            cards.forEach(card => {
+                const isActive = parseInt(card.dataset.dock) === dockId;
+                card.classList.toggle('active', isActive);
+                card.querySelector('.led').classList.toggle('active', isActive);
+            });
+        }
+
+        function rowHTML(d) {
+            return `
+                <tr class="new-row">
+                    <td>${d.timestamp || '-'}</td>
+                    <td>${d.tag_id || '-'}</td>
+                    <td>${d.product_name || '---'}</td>
+                    <td><span class="badge-status ${d.status}">${d.status || '-'}</span></td>
+                    <td>${d.cantidad || 0}</td>
+                    <td>${d.order_id || '-'}</td>
+                </tr>`;
+        }
+
+        function renderTable(dockId) {
+            table.innerHTML = '';
+            (dockData[dockId] || []).slice().reverse().forEach(d => {
+                table.insertAdjacentHTML('beforeend', rowHTML(d));
+            });
+        }
+
+        // ==============================
+        // CAMBIO DE DOCK
+        // ==============================
+        function connectToDock(dockId) {
+            console.log("🔄 Cambiando a dock:", dockId);
+
+            localStorage.setItem('dockId', dockId);
+            currentDockId = dockId;
+
+            const hasActiveSession = !!dockSessions[dockId];
+
+            document.getElementById('session-id').innerText =
+                hasActiveSession ? dockSessions[dockId] : "--";
+
+            document.getElementById('start-time').innerText =
+                hasActiveSession
+                    ? formatDateTime(dockSessionStartTimes[dockId])
+                    : "--:--:--";
+
+            updateSessionButtons(hasActiveSession);
+
+            totalTags = dockData[dockId]?.reduce(
+                (sum, d) => sum + (d.cantidad || 1), 0
+            ) || 0;
+
+            anomalies = dockData[dockId]?.filter(
+                d => d.status === 'extra'
+            ).length || 0;
+
+            document.getElementById('total-tags').innerText = `${totalTags} items`;
+            document.getElementById('anomalies').innerText = `${anomalies} Flags`;
+
+            setActiveCard(dockId);
+            renderTable(dockId);
+        }
+
+        // ==============================
+        // EVENTOS DE WEBSOCKET
+        // ==============================
+        function handleEvent(e, dockId) {
+            if (isPaused) return;
+
+            const d = e.data || {};
+
+            dockData[dockId].push(d);
+            if (dockData[dockId].length > 100) {
+                dockData[dockId].shift();
+            }
+
+            if (dockId === currentDockId) {
+                totalTags += d.cantidad || 1;
+                if (d.status === 'extra') anomalies++;
+
+                document.getElementById('total-tags').innerText = `${totalTags} items`;
+                document.getElementById('anomalies').innerText = `${anomalies} Flags`;
+
+                table.insertAdjacentHTML('afterbegin', rowHTML(d));
+                if (table.children.length > 50) {
+                    table.removeChild(table.lastElementChild);
+                }
+            }
+        }
+
+        // ==============================
+        // CARGA INICIAL DE DOCKS
+        // ==============================
+        async function loadDocks() {
+            const container = document.getElementById('docks-container');
+
+            try {
+                const response = await fetch('/api/docks/initialization', {
+                    headers: { 'Accept': 'application/json' }
+                });
+
+                const result = await response.json();
+
+                if (!response.ok || !result.success) {
+                    throw new Error(result.message || 'No se pudieron cargar los docks');
+                }
+
+                const docks = result.data;
+                container.innerHTML = '';
+
+                if (!docks || docks.length === 0) {
+                    container.innerHTML = `
+                        <div style="color:#6b7280; padding:20px;">
+                            No hay andenes con productos asignados.
+                        </div>`;
+                    return;
+                }
+
+                docks.forEach(dock => {
+                    dockData[dock.id] = dock.scanned_products || [];
+
+                    if (dock.has_active_session && dock.scan_session_id) {
+                        dockSessions[dock.id] = dock.scan_session_id;
+                        dockSessionStartTimes[dock.id] = dock.session_started_at;
+                    }
+
+                    if (!echoSubscriptions[dock.id]) {
+                        echoSubscriptions[dock.id] = window.Echo
+                            .channel(`scan-session.${dock.id}`)
+                            .listen('.ProductScanned', (e) => {
+                                console.log(`📡 Evento recibido en dock ${dock.id}`, e);
+                                handleEvent(e, dock.id);
+                            });
+                    }
+                });
+
+                docks.forEach(dock => {
+                    const card = document.createElement('div');
+                    card.className = 'reader-card';
+                    card.dataset.dock = dock.id;
+
+                    card.innerHTML = `
+                        <div class="card-header">
+                            <div class="left">
+                                <img src="/images/monitor.png" class="dock-icon">
+                                <span>${dock.name}</span>
+                            </div>
+                            <span class="led ${dock.has_active_session ? 'active' : ''}"></span>
+                        </div>
+                        <div class="divider"></div>
+                        <div class="card-body">
+                            <img src="/images/box-dock.png" class="center-icon">
+                        </div>
+                    `;
+
+                    card.addEventListener('click', () =>
+                        connectToDock(parseInt(dock.id))
+                    );
+
+                    container.appendChild(card);
+                });
+
+                cards = document.querySelectorAll('.reader-card');
+
+                const initialDockId = docks.some(d => d.id === currentDockId)
+                    ? currentDockId
+                    : docks[0].id;
+
+                connectToDock(initialDockId);
+
+                console.log("✅ Docks cargados correctamente con sesiones activas");
+
+            } catch (error) {
+                console.error("❌ Error al cargar docks:", error);
+                container.innerHTML = `
+                    <div style="color:#ef4444; padding:20px;">
+                        Error al cargar los andenes.
+                    </div>`;
+            }
+        }
+
+        // ==============================
+        // INICIAR SESIÓN
+        // ==============================
+        async function startSession() {
+            const dock = currentDockId;
+
+            if (!dock) {
+                alert("Debe seleccionar un dock antes de iniciar la sesión.");
+                return;
+            }
+
+            if (dockSessions[dock]) {
+                alert(`El dock ${dock} ya tiene una sesión activa.`);
+                return;
+            }
+
+            try {
+                const rfidResponse = await fetch("/api/rfid/start", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "X-CSRF-TOKEN": csrfToken,
+                        "Accept": "application/json"
+                    },
+                    body: JSON.stringify({ dock_id: parseInt(dock) })
+                });
+
+                if (!rfidResponse.ok) {
+                    throw new Error("Error al iniciar el lector RFID.");
+                }
+
+                const sessionResponse = await fetch("/api/scan-sessions", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "X-CSRF-TOKEN": csrfToken,
+                        "Accept": "application/json"
+                    },
+                    body: JSON.stringify({ dock_id: parseInt(dock) })
+                });
+
+                const sessionData = await sessionResponse.json();
+
+                if (!sessionResponse.ok) {
+                    throw new Error(sessionData.message || "Error al crear la sesión.");
+                }
+
+                const sessionId = sessionData?.data?.scan_session_id;
+
+                if (!sessionId) {
+                    throw new Error("No se recibió el ID de la sesión.");
+                }
+
+                dockSessions[dock] = sessionId;
+                dockSessionStartTimes[dock] = new Date().toISOString();
+
+                document.getElementById('session-id').innerText = sessionId;
+                document.getElementById('start-time').innerText =
+                    formatDateTime(dockSessionStartTimes[dock]);
+
+                document.getElementById('total-tags').innerText = "0 items";
+                document.getElementById('anomalies').innerText = "0 Flags";
+
+                updateSessionButtons(true);
+
+                alert(`Sesión iniciada correctamente para el dock ${dock}`);
+
+            } catch (error) {
+                console.error("❌ Error en startSession:", error);
+                alert(error.message);
+            }
+        }
+
+        // ==============================
+        // FINALIZAR SESIÓN
+        // ==============================
+        async function endSession() {
+            const dock = currentDockId;
+
+            if (!dockSessions[dock]) {
+                alert(`No hay una sesión activa para el dock ${dock}.`);
+                return;
+            }
+
+            if (!confirm("¿Deseas finalizar la sesión actual?")) return;
+
+            try {
+                const rfidResponse = await fetch("/api/rfid/stop", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "X-CSRF-TOKEN": csrfToken
+                    },
+                    body: JSON.stringify({ dock_id: parseInt(dock) })
+                });
+
+                if (!rfidResponse.ok) {
+                    throw new Error("Error al detener el lector RFID.");
+                }
+
+                const sessionResponse = await fetch(`/api/docks/${dock}/close-session`, {
+                    method: "POST",
+                    headers: {
+                        "X-CSRF-TOKEN": csrfToken
+                    }
+                });
+
+                const sessionData = await sessionResponse.json();
+
+                if (!sessionResponse.ok) {
+                    throw new Error(sessionData.message || "Error al cerrar la sesión.");
+                }
+
+                delete dockSessions[dock];
+                delete dockSessionStartTimes[dock];
+                dockData[dock] = [];
+
+                document.getElementById('session-id').innerText = "--";
+                document.getElementById('start-time').innerText = "--:--:--";
+                document.getElementById('total-tags').innerText = "0 items";
+                document.getElementById('anomalies').innerText = "0 Flags";
+
+                updateSessionButtons(false);
+                renderTable(dock);
+
+                alert(`Sesión finalizada correctamente para el dock ${dock}`);
+
+            } catch (error) {
+                console.error(error);
+                alert(error.message);
+            }
+        }
+
+        // ==============================
+        // PAUSAR SESIÓN
+        // ==============================
+        function pauseSession() {
+            isPaused = !isPaused;
+            alert(isPaused ? "Sesión en pausa" : "Sesión reanudada");
+        }
+
+        // ==============================
+        // ESPERAR A ECHO
+        // ==============================
+        function waitForEcho(cb) {
+            if (window.Echo) return cb();
+            setTimeout(() => waitForEcho(cb), 100);
+        }
+
+        // ==============================
+        // INICIALIZACIÓN
+        // ==============================
+        waitForEcho(async () => {
+            console.log("✅ Echo listo, cargando docks...");
+            await loadDocks();
         });
 
-        cards.forEach(c=>{
-            c.onclick=()=>connectToDock(parseInt(c.dataset.dock));
-        });
-
-        connectToDock(currentDockId);
+        // Exponer funciones globalmente
+        window.startSession = startSession;
+        window.endSession = endSession;
+        window.pauseSession = pauseSession;
     });
-
-});
-</script>
-
+    </script>
 </body>
 </html>

@@ -94,7 +94,7 @@ padding:8px;
 }
 
 </style>
-
+<meta name="csrf-token" content="{{ csrf_token() }}">
 </head>
 
 <body>
@@ -188,340 +188,370 @@ padding:8px;
 
 </div>
 
+    <script>
+        // ==============================
+        // CONFIGURACIÓN GLOBAL
+        // ==============================
 
-<script>
+        // Obtener CSRF Token de Laravel
+        const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
 
-function log(msg,type="info"){
+        // Almacena las sesiones activas por dock
+        // Ejemplo: { 1: 'SESSION-123', 2: 'SESSION-456' }
+        const dockSessions = {};
 
-let logs=document.getElementById("logs")
 
-let div=document.createElement("div")
+        // ==============================
+        // UTILIDADES DE LOG
+        // ==============================
 
-div.className="log "+type
+        function log(msg, type = "info") {
+            const logs = document.getElementById("logs");
+
+            const div = document.createElement("div");
+            div.className = "log " + type;
+            div.innerText = new Date().toLocaleTimeString() + "  " + msg;
+
+            logs.appendChild(div);
+            logs.scrollTop = logs.scrollHeight;
+        }
 
-div.innerText=new Date().toLocaleTimeString()+"  "+msg
+        function clearLogs() {
+            document.getElementById("logs").innerHTML = "";
+        }
 
-logs.appendChild(div)
 
-logs.scrollTop=logs.scrollHeight
+        // ==============================
+        // AGREGAR CAMPOS RFID DINÁMICOS
+        // ==============================
 
-}
+        function addRFID() {
+            const container = document.getElementById("rfid-container");
+
+            const row = document.createElement("div");
+            row.className = "rfid-row";
+            row.style.marginTop = "15px";
 
-function clearLogs(){
-document.getElementById("logs").innerHTML=""
-}
+            row.innerHTML = `
+                <label>RFID del producto</label>
+                <input class="rfid" placeholder="Ejemplo: 98765">
 
+                <label>Cantidad</label>
+                <input class="qty" type="number" min="1" placeholder="Ejemplo: 2" value="1">
 
+                <button onclick="this.parentElement.remove()">❌</button>
+            `;
+
+            container.appendChild(row);
+        }
 
-function addRFID(){
+
+        // ==============================
+        // INICIAR SESIÓN POR DOCK
+        // ==============================
+
+        async function startSession() {
+            const dock = parseInt(document.getElementById("dock_id").value);
 
-let container=document.getElementById("rfid-container")
-
-let row=document.createElement("div")
-
-row.className="rfid-row"
-row.style.marginTop="15px"
-
-row.innerHTML=`
-
-<label>RFID del producto</label>
-<input class="rfid" placeholder="Ejemplo: 98765">
-
-<label>Cantidad</label>
-<input class="qty" type="number" placeholder="Ejemplo: 2" value="1">
-
-<button onclick="this.parentElement.remove()">❌</button>
-
-`
-
-container.appendChild(row)
-
-}
-
-
-
-async function startSession(){
-
-let dock=document.getElementById("dock_id").value
-
-if(!dock){
-log("Dock ID requerido","error")
-return
-}
-
-log("Iniciando sesión para dock "+dock)
-
-/* START RFID */
-
-log("Iniciando lector RFID...")
-
-let rfid = await fetch("/api/rfid/start",{
-
-method:"POST",
-
-headers:{
-"Content-Type":"application/json"
-},
-
-body:JSON.stringify({
-dock_id:parseInt(dock)
-})
-
-})
-
-let text = await rfid.text()
-
-if(!rfid.ok){
-
-log("Error al iniciar lector RFID","error")
-log("HTTP status: "+rfid.status,"error")
-log("Respuesta: "+text,"error")
-
-return
-}
-
-log("Lector RFID iniciado correctamente","success")
-log("Respuesta: "+text,"info")
-
-log("Lector RFID iniciado correctamente","success")
-
-/* TU API */
-
-let res=await fetch("/api/scan-sessions",{
-
-method:"POST",
-
-headers:{
-"Content-Type":"application/json"
-},
-
-body:JSON.stringify({
-dock_id:dock
-})
-
-})
-
-let data=await res.json()
-
-if(res.ok){
-
-log(data.message,"success")
-log("Session ID: "+data.data.scan_session_id)
-
-}else{
-
-log(data.message,"error")
-
-}
-
-}
-
-
-
-async function closeSession(){
-
-let dock=document.getElementById("dock_id").value
-
-log("Cerrando sesión para dock "+dock)
-
-/* STOP RFID */
-
-log("Deteniendo lector RFID...")
-
-let rfid = await fetch("/api/rfid/stop",{
-
-method:"POST",
-
-headers:{
-"Content-Type":"application/json"
-},
-
-body:JSON.stringify({
-dock_id:parseInt(dock)
-})
-
-})
-
-if(rfid.ok){
-log("Lector RFID detenido correctamente","success")
-}else{
-log("Error al detener lector RFID","error")
-}
-
-/* TU API */
-
-let res=await fetch("/api/docks/"+dock+"/close-session",{
-method:"POST"
-})
-
-let data=await res.json()
-
-if(res.ok){
-
-log(data.message,"success")
-log("Estado actual: "+data.data.status)
-
-}else{
-
-log(data.message,"error")
-
-}
-
-}
-
-
-
-async function scan(){
-
-let dock=document.getElementById("dock_id").value
-
-let rfidInputs=document.querySelectorAll(".rfid")
-let qtyInputs=document.querySelectorAll(".qty")
-
-let events=[]
-
-for(let i=0;i<rfidInputs.length;i++){
-
-let rfid=rfidInputs[i].value
-let qty=parseInt(qtyInputs[i].value)
-
-if(!rfid || !qty) continue
-
-for(let j=0;j<qty;j++){
-events.push({rfid:rfid})
-}
-
-log("Preparando RFID "+rfid+" x"+qty)
-
-}
-
-if(events.length===0){
-log("No hay eventos para enviar","error")
-return
-}
-
-log("Enviando batch con "+events.length+" eventos")
-
-let res=await fetch("/api/scan-events/batch",{
-
-method:"POST",
-
-headers:{
-"Content-Type":"application/json"
-},
-
-body:JSON.stringify({
-dock_id:dock,
-events:events
-})
-
-})
-
-let data=await res.json()
-
-if(res.ok){
-
-log("Lote procesado correctamente","success")
-
-log("Escaneados correctos en este lote: "+data.data.scanned_in_this_batch)
-log("Extras en este lote: "+data.data.extras_in_this_batch)
-log("Extras acumulados en la sesión: "+data.data.total_extras_in_session)
-
-log("Total esperado: "+data.data.expected_total)
-log("Total escaneado: "+data.data.scanned_total)
-log("Total faltante: "+data.data.missing_total)
-
-log("Estado de la sesión: "+data.data.status)
-
-if(data.data.LED === "VERDE"){
-log("Indicador LED: VERDE","success")
-}
-else if(data.data.LED === "ROJO"){
-log("Indicador LED: ROJO","error")
-}
-
-}else{
-
-log(data.message,"error")
-
-}
-
-}
-
-
-
-async function loadResults(){
-
-let dock=document.getElementById("dock_id").value
-
-log("Buscando resultados cerrados")
-
-let attempts=0
-
-while(attempts<10){
-
-let res=await fetch("/api/docks/"+dock+"/closed-results")
-
-let data=await res.json()
-
-if(res.ok){
-    let totals=data.data.totals
-
-let totalsDiv=document.getElementById("session-totals")
-
-totalsDiv.innerHTML=`
-
-<b>Expected:</b> ${totals.expected_total} &nbsp;&nbsp;
-<b>Scanned:</b> ${totals.scanned_total} &nbsp;&nbsp;
-<b>Missing:</b> ${totals.missing_total} &nbsp;&nbsp;
-<b style="color:#f87171">Extras:</b> ${totals.extra_total}
-
-`
-let table=document.querySelector("#results tbody")
-table.innerHTML=""
-
-data.data.orders.forEach(o=>{
-
-let tr=document.createElement("tr")
-
-tr.innerHTML=`
-
-<td>${o.order_id}</td>
-<td>${o.expected_total}</td>
-<td>${o.scanned_total}</td>
-<td>${o.missing_total}</td>
-<td>${o.status}</td>
-
-`
-
-table.appendChild(tr)
-
-})
-
-log("Resultados cargados correctamente","success")
-
-return
-
-}
-
-else{
-
-log("La sesión aún se está cerrando... esperando","info")
-
-await new Promise(r=>setTimeout(r,2000))
-
-attempts++
-
-}
-
-}
-
-log("No se pudieron obtener resultados aún","error")
-
-}
-
-</script>
-
+            if (!dock) {
+                log("Dock ID requerido", "error");
+                return;
+            }
+
+            // Validar si ya existe una sesión activa para ese dock
+            if (dockSessions[dock]) {
+                log(`El dock ${dock} ya tiene una sesión activa (ID: ${dockSessions[dock]})`, "error");
+                return;
+            }
+
+            try {
+                log(`Iniciando sesión para dock ${dock}`, "info");
+
+                // ==============================
+                // 1. INICIAR LECTOR RFID
+                // ==============================
+                log("Iniciando lector RFID...", "info");
+
+                const rfid = await fetch("/api/rfid/start", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "X-CSRF-TOKEN": csrfToken
+                    },
+                    body: JSON.stringify({
+                        dock_id: dock
+                    })
+                });
+
+                const rfidText = await rfid.text();
+
+                if (!rfid.ok) {
+                    log("Error al iniciar lector RFID", "error");
+                    log("HTTP status: " + rfid.status, "error");
+                    log("Respuesta: " + rfidText, "error");
+                    return;
+                }
+
+                log("Lector RFID iniciado correctamente", "success");
+
+                // ==============================
+                // 2. CREAR SESIÓN DE ESCANEO
+                // ==============================
+                log("Creando sesión de escaneo...", "info");
+
+                const res = await fetch("/api/scan-sessions", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "X-CSRF-TOKEN": csrfToken
+                    },
+                    body: JSON.stringify({
+                        dock_id: dock
+                    })
+                });
+
+                const data = await res.json();
+
+                if (res.ok) {
+                    const sessionId = data.data.scan_session_id;
+
+                    // Guardar la sesión asociada al dock
+                    dockSessions[dock] = sessionId;
+
+                    log(data.message || "Sesión creada correctamente", "success");
+                    log(`Session ID para dock ${dock}: ${sessionId}`, "info");
+                } else {
+                    log(data.message || "Error al crear la sesión", "error");
+                }
+
+            } catch (error) {
+                log("Error inesperado: " + error.message, "error");
+            }
+        }
+
+
+        // ==============================
+        // CERRAR SESIÓN POR DOCK
+        // ==============================
+
+        async function closeSession() {
+            const dock = parseInt(document.getElementById("dock_id").value);
+
+            if (!dock) {
+                log("Dock ID requerido para cerrar la sesión", "error");
+                return;
+            }
+
+            if (!dockSessions[dock]) {
+                log(`El dock ${dock} no tiene una sesión activa`, "error");
+                return;
+            }
+
+            try {
+                log(`Cerrando sesión para dock ${dock}`, "info");
+
+                // ==============================
+                // 1. DETENER LECTOR RFID
+                // ==============================
+                log("Deteniendo lector RFID...", "info");
+
+                const rfid = await fetch("/api/rfid/stop", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "X-CSRF-TOKEN": csrfToken
+                    },
+                    body: JSON.stringify({
+                        dock_id: dock
+                    })
+                });
+
+                if (rfid.ok) {
+                    log("Lector RFID detenido correctamente", "success");
+                } else {
+                    const errorText = await rfid.text();
+                    log("Error al detener lector RFID", "error");
+                    log("Respuesta: " + errorText, "error");
+                }
+
+                // ==============================
+                // 2. CERRAR SESIÓN EN EL BACKEND
+                // ==============================
+                const res = await fetch(`/api/docks/${dock}/close-session`, {
+                    method: "POST",
+                    headers: {
+                        "X-CSRF-TOKEN": csrfToken
+                    }
+                });
+
+                const data = await res.json();
+
+                if (res.ok) {
+                    log(data.message || "Sesión cerrada correctamente", "success");
+                    log(`Estado actual: ${data.data.status}`, "info");
+
+                    // Eliminar la sesión del dock
+                    delete dockSessions[dock];
+                } else {
+                    log(data.message || "Error al cerrar la sesión", "error");
+                }
+
+            } catch (error) {
+                log("Error inesperado: " + error.message, "error");
+            }
+        }
+
+
+        // ==============================
+        // ENVIAR EVENTOS DE ESCANEO
+        // ==============================
+
+        async function scan() {
+            const dock = parseInt(document.getElementById("dock_id").value);
+
+            if (!dock) {
+                log("Dock ID requerido para enviar eventos", "error");
+                return;
+            }
+
+            if (!dockSessions[dock]) {
+                log(`El dock ${dock} no tiene una sesión activa`, "error");
+                return;
+            }
+
+            const rfidInputs = document.querySelectorAll(".rfid");
+            const qtyInputs = document.querySelectorAll(".qty");
+
+            const events = [];
+
+            for (let i = 0; i < rfidInputs.length; i++) {
+                const rfid = rfidInputs[i].value.trim();
+                const qty = parseInt(qtyInputs[i].value);
+
+                if (!rfid || !qty || qty <= 0) continue;
+
+                for (let j = 0; j < qty; j++) {
+                    events.push({ rfid: rfid });
+                }
+
+                log(`Preparando RFID ${rfid} x${qty}`, "info");
+            }
+
+            if (events.length === 0) {
+                log("No hay eventos para enviar", "error");
+                return;
+            }
+
+            try {
+                log(`Enviando batch con ${events.length} eventos`, "info");
+
+                const res = await fetch("/api/scan-events/batch", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "X-CSRF-TOKEN": csrfToken
+                    },
+                    body: JSON.stringify({
+                        dock_id: dock,
+                        events: events
+                    })
+                });
+
+                const data = await res.json();
+
+                if (res.ok) {
+                    log("Lote procesado correctamente", "success");
+
+                    log(`Escaneados correctos en este lote: ${data.data.scanned_in_this_batch}`);
+                    log(`Extras en este lote: ${data.data.extras_in_this_batch}`);
+                    log(`Extras acumulados en la sesión: ${data.data.total_extras_in_session}`);
+
+                    log(`Total esperado: ${data.data.expected_total}`);
+                    log(`Total escaneado: ${data.data.scanned_total}`);
+                    log(`Total faltante: ${data.data.missing_total}`);
+
+                    log(`Estado de la sesión: ${data.data.status}`);
+
+                    if (data.data.LED === "VERDE") {
+                        log("Indicador LED: VERDE", "success");
+                    } else if (data.data.LED === "ROJO") {
+                        log("Indicador LED: ROJO", "error");
+                    }
+                } else {
+                    log(data.message || "Error al procesar el lote", "error");
+                }
+
+            } catch (error) {
+                log("Error inesperado: " + error.message, "error");
+            }
+        }
+
+
+        // ==============================
+        // CARGAR RESULTADOS DE SESIÓN
+        // ==============================
+
+        async function loadResults() {
+            const dock = parseInt(document.getElementById("dock_id").value);
+
+            if (!dock) {
+                log("Dock ID requerido para consultar resultados", "error");
+                return;
+            }
+
+            log(`Buscando resultados cerrados para dock ${dock}`, "info");
+
+            let attempts = 0;
+
+            while (attempts < 10) {
+                try {
+                    const res = await fetch(`/api/docks/${dock}/closed-results`);
+                    const data = await res.json();
+
+                    if (res.ok) {
+                        const totals = data.data.totals;
+
+                        const totalsDiv = document.getElementById("session-totals");
+                        totalsDiv.innerHTML = `
+                            <b>Expected:</b> ${totals.expected_total} &nbsp;&nbsp;
+                            <b>Scanned:</b> ${totals.scanned_total} &nbsp;&nbsp;
+                            <b>Missing:</b> ${totals.missing_total} &nbsp;&nbsp;
+                            <b style="color:#f87171">Extras:</b> ${totals.extra_total}
+                        `;
+
+                        const table = document.querySelector("#results tbody");
+                        table.innerHTML = "";
+
+                        data.data.orders.forEach(o => {
+                            const tr = document.createElement("tr");
+                            tr.innerHTML = `
+                                <td>${o.order_id}</td>
+                                <td>${o.expected_total}</td>
+                                <td>${o.scanned_total}</td>
+                                <td>${o.missing_total}</td>
+                                <td>${o.status}</td>
+                            `;
+                            table.appendChild(tr);
+                        });
+
+                        log("Resultados cargados correctamente", "success");
+                        return;
+                    } else {
+                        log("La sesión aún se está cerrando... esperando", "info");
+                        await new Promise(r => setTimeout(r, 2000));
+                        attempts++;
+                    }
+
+                } catch (error) {
+                    log("Error al consultar resultados: " + error.message, "error");
+                    return;
+                }
+            }
+
+            log("No se pudieron obtener resultados aún", "error");
+        }
+
+    </script>
 </body>
 
 </html>

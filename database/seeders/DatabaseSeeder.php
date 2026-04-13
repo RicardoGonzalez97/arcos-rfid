@@ -18,7 +18,8 @@ class DatabaseSeeder extends Seeder
        $this->call([
             PurchaseOrderSeeder::class,
             SupplierAppointmentSlotDockSeeder::class,
-            DockPurchaseOrderSeeder::class
+            DockPurchaseOrderSeeder::class,
+            AdminUserSeeder::class
         ]);
     }
 }
