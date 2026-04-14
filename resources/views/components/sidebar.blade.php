@@ -30,6 +30,12 @@
                 <img src="/images/settings.png" class="menu-icon">
                 Gate Settings
             </a>
+
+            <a href="{{ route('final.inventory') }}"
+               class="{{ request()->routeIs('final.inventory') ? 'active' : '' }}">
+                <img src="/images/db.png" class="menu-icon">
+                Final Inventory
+            </a>
         </div>
     </div>
 

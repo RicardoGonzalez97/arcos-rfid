@@ -48,6 +48,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/dashboard', fn() => view('dashboard'))->name('dashboard');
     Route::get('/system-alerts', fn() => view('system-alerts'))->name('system.alerts');
     Route::get('/gate-settings', fn() => view('gate-settings'))->name('gate.settings');
+    Route::get('/final-inventory-confirmation', fn() => view('final-inventory-confirmation'))->name('final.inventory');
 });
 
 require __DIR__.'/auth.php';

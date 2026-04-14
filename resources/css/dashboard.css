@@ -118,6 +118,7 @@ body {
     display: flex;
     align-items: center;
     gap: 20px;
+    flex-wrap: wrap;
 }
 
 .topbar-row.space-between {
@@ -160,6 +161,8 @@ body {
     display: flex;
     align-items: center;
     gap: 20px;
+    flex-wrap: wrap;
+    min-width: 0;
 }
 
 .info-block {
@@ -168,6 +171,7 @@ body {
     gap: 2px;
     padding-right: 20px;
     border-right: 1px solid #e5e7eb;
+    min-width: 120px;
 }
 
 .info-block:last-child {
@@ -200,6 +204,8 @@ body {
 .button-group {
     display: flex;
     gap: 10px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
     margin-left: 20px;
 }
 
@@ -262,6 +268,47 @@ body {
     gap: 20px;
     flex: 1;
     overflow: hidden;
+}
+
+@media (max-width: 1200px) {
+    .button-group {
+        margin-left: 0;
+    }
+
+    .user-info {
+        margin-left: 0;
+    }
+}
+
+@media (max-width: 900px) {
+    .topbar {
+        padding: 14px 18px;
+    }
+
+    .topbar-row,
+    .topbar-row.space-between {
+        align-items: flex-start;
+    }
+
+    .session-info {
+        gap: 14px;
+    }
+
+    .info-block {
+        min-width: 0;
+        padding-right: 14px;
+    }
+
+    .user-info {
+        width: 100%;
+        border-left: 0;
+        padding-left: 0;
+        padding-top: 6px;
+    }
+
+    .button-group {
+        width: 100%;
+    }
 }
 
 /* ==============================
