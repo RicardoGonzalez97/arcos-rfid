@@ -25,4 +25,9 @@ class ProductScanned implements ShouldBroadcastNow
     {
         return 'ProductScanned';
     }
+
+     public function broadcastWith()
+    {
+        return $this->data;
+    }
 }
