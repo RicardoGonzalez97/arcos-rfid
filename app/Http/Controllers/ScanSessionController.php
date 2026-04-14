@@ -283,7 +283,7 @@ logger()->info('EVENT DOCK ID', [
         $productName = $product?->name ?? 'Unknown';
        event(new \App\Events\ProductScanned([
         'timestamp'    => now()->format('H:i:s'),
-        'product_id'   => $productId,
+        'tag_id'   => $productId,
         'product_name' => $productName,
         'status'       => $status,
         'cantidad'     => $totalQty,

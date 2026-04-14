@@ -32,6 +32,22 @@ Route::get('/test-broadcast', function () {
     return 'ok';
 });
 
+Route::get('/dashboard', function () {
+    return view('dashboard');
+})->name('dashboard');
 
+Route::get('/system-alerts', function () {
+    return view('system-alerts');
+})->name('system.alerts');
+
+Route::get('/gate-settings', function () {
+    return view('gate-settings');
+})->name('gate.settings');
+
+Route::middleware(['auth'])->group(function () {
+    Route::get('/dashboard', fn() => view('dashboard'))->name('dashboard');
+    Route::get('/system-alerts', fn() => view('system-alerts'))->name('system.alerts');
+    Route::get('/gate-settings', fn() => view('gate-settings'))->name('gate.settings');
+});
 
 require __DIR__.'/auth.php';
