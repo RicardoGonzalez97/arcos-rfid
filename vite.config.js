@@ -6,9 +6,11 @@ export default defineConfig({
         laravel({
             input: [
                 'resources/css/app.css',
-                'resources/css/dashboard.css',
                 'resources/js/app.js',
+                'resources/css/dashboard.css',
                 'resources/js/dashboard.js',
+                'resources/css/system-alerts.css',
+                'resources/js/system-alerts.js',
             ],
             refresh: true,
         }),

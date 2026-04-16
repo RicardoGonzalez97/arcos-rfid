@@ -12,6 +12,7 @@ use App\Traits\ApiResponse;
 use App\Services\PurchaseOrderNormalizer;
 use App\Models\PurchaseOrder;
 use App\Models\Product;
+use App\Models\Anomaly;
 use App\Jobs\NormalizeDockOrdersJob;
 
 class ScanSessionController extends Controller
@@ -194,11 +195,43 @@ public function batch(Request $request)
             }
 
             if (!empty($invalidProducts)) {
+
+                logger()->info('Productos inválidos detectados', [
+                    'dockId' => $dockId,
+                    'invalidProducts' => $invalidProducts
+                ]);
+
+                foreach ($invalidProducts as $invalidProductId) {
+
+                    $cantidad = $groupedProducts[$invalidProductId] ?? 1;
+
+                    // 🔥 Guardar anomalía en la base de datos
+                    Anomaly::create([
+                        'scan_session_id' => $scanSessionId,
+                        'dock_id'         => $dockId,
+                        'tag_id'          => (string) $invalidProductId,
+                        'anomaly_type'    => 'unknown',
+                        'status'          => 'open',
+                        'quantity'        => $cantidad,
+                        'detected_at'     => now(),
+                    ]);
+
+                    // 🔥 Emitir evento WebSocket
+                    event(new \App\Events\ProductScanned([
+                        'timestamp'    => now()->format('H:i:s'),
+                        'tag_id'       => (string) $invalidProductId,
+                        'product_name' => 'Unknown',
+                        'status'       => 'unknown',
+                        'cantidad'     => $cantidad,
+                        'order_id'     => null
+                    ], $dockId));
+                }
+
                 return [
                     'error' => true,
                     'message' => 'Some products do not exist',
                     'invalid_products' => $invalidProducts,
-                     'LED' => 'ROJO',
+                    'LED' => 'ROJO',
                 ];
             }
 
@@ -268,29 +301,39 @@ public function batch(Request $request)
                     'scanned_at'      => $now,
                 ];
             }
+        
+            Anomaly::create([
+                'scan_session_id' => $scanSessionId,
+                'dock_id'         => $dockId,
+                'tag_id'          => (string) $productId,
+                'anomaly_type'    => 'extra',
+                'status'          => 'open',
+                'quantity'        => $qtyToAssign,
+                'detected_at'     => now(),
+            ]);
 
             $extraCount += $qtyToAssign;
         }
 
         // 🔥 DEFINE STATUS AQUÍ (ANTES DEL EVENTO)
         $status = $qtyToAssign > 0 ? 'extra' : 'scanned';
-logger()->info('va por el evento');
-logger()->info('EVENT DOCK ID', [
-    'dockId' => $dockId
-]);
-        $product = Product::where('product_id', $productId)->first();
+        logger()->info('va por el evento');
+        logger()->info('EVENT DOCK ID', [
+            'dockId' => $dockId
+        ]);
+                $product = Product::where('product_id', $productId)->first();
 
-        $productName = $product?->name ?? 'Unknown';
-       event(new \App\Events\ProductScanned([
-        'timestamp'    => now()->format('H:i:s'),
-        'tag_id'   => $productId,
-        'product_name' => $productName,
-        'status'       => $status,
-        'cantidad'     => $totalQty,
-        'order_id'     => $orderId
-        ], $dockId));
-       
-}
+                $productName = $product?->name ?? 'Unknown';
+            event(new \App\Events\ProductScanned([
+                'timestamp'    => now()->format('H:i:s'),
+                'tag_id'   => $productId,
+                'product_name' => $productName,
+                'status'       => $status,
+                'cantidad'     => $totalQty,
+                'order_id'     => $orderId
+                ], $dockId));
+            
+        }
 
             /*
             |--------------------------------------------------------------------------

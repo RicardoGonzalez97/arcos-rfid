@@ -4,6 +4,7 @@ use App\Http\Controllers\ScanSessionController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\PowerController;
 use App\Http\Controllers\RfidController;
+use App\Http\Controllers\AnomalyController;
 
 Route::get('test', function () {
     return response()->json([
@@ -32,3 +33,9 @@ Route::post('/rfid/start', [RfidController::class,'start']);
 Route::post('/rfid/stop', [RfidController::class,'stop']);
 Route::get('/docks/with-products', [RfidController::class, 'withProducts']);
 Route::get('/docks/initialization', [RfidController::class, 'initialization']);
+
+Route::prefix('anomalies')->group(function () {
+    Route::get('/summary', [AnomalyController::class, 'summary']); // 👈 Primero
+    Route::get('/', [AnomalyController::class, 'index']);
+    Route::get('/{id}', [AnomalyController::class, 'show']);       // 👈 Al final
+});
